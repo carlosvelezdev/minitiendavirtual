@@ -1,65 +1,88 @@
 package com.cavs.minitiendavirtual.services;
 
-import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
-import java.util.Optional;
+import java.util.stream.Collectors;
 
 import com.cavs.minitiendavirtual.domain.Producto;
+import com.cavs.minitiendavirtual.persistence.entities.ProductoEntity;
+import com.cavs.minitiendavirtual.persistence.repositories.ProductosRepository;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 @Service
 public class ProductoServiceImpl implements ProductoService {
 
-    private List<Producto> productos = new ArrayList<>(Arrays.asList(
-            new Producto(1, "Televisor", 1200000.0, 10),
-            new Producto(2, "DVD", 500000.0, 4),
-            new Producto(3, "Nevera", 2500000.0, 20)
-    )
-    );
+    @Autowired
+    private ProductosRepository productosRepository;
 
     @Override
     public List<Producto> getProductos() {
-        return productos;
+        return productosRepository.findAll()
+                .stream()
+                .map(this::mapToDto)
+                .collect(Collectors.toList());
     }
 
     @Override
     public Producto getProductoById(Integer id) {
-        return productos.stream()
-                .filter(producto -> producto.getId().equals(id))
-                .findFirst()
-                .orElseThrow(() -> new RuntimeException("Producto no encontrado"));
+        return productosRepository.findById(id)
+                .map(this::mapToDto)
+                .orElse(null); // puedes lanzar excepción si lo prefieres
     }
 
     @Override
     public Producto createProducto(Producto producto) {
-        productos.add(producto);
-        return producto;
+        // No asignamos ID para que Hibernate lo trate como nuevo
+        producto.setId(null);
+        ProductoEntity saved = productosRepository.save(mapToEntity(producto));
+        return mapToDto(saved);
     }
 
     @Override
     public Producto updateProducto(Producto producto) {
-        Optional<Producto> existenteOpt = productos.stream()
-                .filter(p -> p.getId().equals(producto.getId()))
-                .findFirst();
-
-        if (existenteOpt.isEmpty()) {
-            throw new RuntimeException("Producto no encontrado para actualizar");
+        if (producto.getId() == null) {
+            throw new RuntimeException("ID requerido para actualizar producto");
         }
 
-        Producto existente = existenteOpt.get();
+        ProductoEntity existente = productosRepository.findById(producto.getId())
+                .orElseThrow(() -> new RuntimeException("Producto no encontrado para actualizar"));
+
         existente.setNombre(producto.getNombre());
         existente.setPrecio(producto.getPrecio());
         existente.setStock(producto.getStock());
-        return existente;
+
+        ProductoEntity updated = productosRepository.save(existente);
+        return mapToDto(updated);
     }
 
     @Override
     public void deleteProducto(Producto producto) {
-        boolean eliminado = productos.removeIf(p -> p.getId().equals(producto.getId()));
-        if (!eliminado) {
+        if (producto.getId() != null && productosRepository.existsById(producto.getId())) {
+            productosRepository.deleteById(producto.getId());
+        } else {
             throw new RuntimeException("Producto no encontrado para eliminar");
         }
     }
 
+    // Métodos auxiliares
+    private Producto mapToDto(ProductoEntity entity) {
+        Producto dto = new Producto();
+        dto.setId(entity.getId());
+        dto.setNombre(entity.getNombre());
+        dto.setPrecio(entity.getPrecio());
+        dto.setStock(entity.getStock());
+        return dto;
+    }
+
+    private ProductoEntity mapToEntity(Producto product) {
+        ProductoEntity productoEntity = new ProductoEntity();
+        // No seteamos ID si es null (creación)
+        if (product.getId() != null) {
+            productoEntity.setId(product.getId());
+        }
+        productoEntity.setNombre(product.getNombre());
+        productoEntity.setPrecio(product.getPrecio());
+        productoEntity.setStock(product.getStock());
+        return productoEntity;
+    }
 }
